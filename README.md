@@ -4,7 +4,7 @@
 
 **Multi-language metadata for Jellyfin.**
 
-Polyglot creates language-specific "mirror" libraries using filesystem hardlinks. Your media files stay exactly where they are, but each language gets its own library with native metadata. Users are then assigned to their preferred language and only see libraries in that language.
+Polyglot creates language-specific "mirror" libraries using filesystem hardlinks or symlinks. Your media files stay exactly where they are, but each language gets its own library with native metadata. Users are then assigned to their preferred language and only see libraries in that language.
 
 ```
 /media/movies/                      ← Original library (English metadata)
@@ -13,14 +13,14 @@ Polyglot creates language-specific "mirror" libraries using filesystem hardlinks
 
 /media/polyglot/spanish/movies/     ← Mirror library (Spanish metadata)
     Inception (2010)/
-        Inception.mkv  ──────────→ [hardlink to original, zero extra storage]
+        Inception.mkv  ──────────→ [hardlink or symlink to original, zero extra storage]
 ```
 
 ## Features
 
--   **Zero-Copy Mirroring** — Hardlinks share actual file data, mirrors use negligible disk space
+-   **Zero-Copy Mirroring** — Hardlinks/symlinks share actual file data, mirrors use negligible disk space
 -   **Per-User Language Control** — Each user sees only libraries matching their assigned language
--   **Watch Progress Syncs** — Since hardlinks point to the same file, watch history is automatically shared
+-   **Watch Progress Syncs** — Since hardlinks/symlinks point to the same file, watch history is automatically shared
 -   **Automatic Sync** — Mirrors update after library scans and on a configurable schedule (default: every 6 hours)
 -   **Auto-Manage New Users** — Optionally assign a default language to newly created users
 -   **Built-in Diagnostics** — Generate debug reports for easy troubleshooting
@@ -28,8 +28,9 @@ Polyglot creates language-specific "mirror" libraries using filesystem hardlinks
 ## Requirements
 
 -   Jellyfin Server **10.10.x** or higher
--   Source and mirror paths on the **same filesystem** (hardlinks can't cross mount points)
 -   Write permissions to the mirror destination path
+-   In **Hardlink** mode (default): source and mirror paths must be on the **same filesystem** (hardlinks can't cross mount points)
+-   In **Symlink** mode: source and mirror paths can be on different filesystems/mounts, but the mirror destination itself must be on a filesystem that supports symlinks — see [Choosing a Link Mode](#choosing-a-link-mode) below
 
 ## Installation
 
@@ -68,7 +69,7 @@ Download from [Releases](https://github.com/Maronato/jellyfin-plugin-polyglot/re
 1. Click the **+** button on your language alternative
 2. Select a source library (e.g., "Movies")
 3. Confirm the target path (auto-suggested based on your destination)
-4. The plugin creates hardlinks and a new Jellyfin library with your target language's metadata
+4. The plugin creates links (per the configured Link Mode) and a new Jellyfin library with your target language's metadata
 
 ### 3. Assign Users
 
@@ -84,7 +85,7 @@ Download from [Releases](https://github.com/Maronato/jellyfin-plugin-polyglot/re
 
 ## Docker Configuration
 
-Hardlinks require source and destination to be on the **same filesystem**. In Docker, this means a **single mount point**:
+In **Hardlink** mode (the default), source and destination must be on the **same filesystem**. In Docker, this means a **single mount point**:
 
 ```yaml
 # ✅ Correct — single mount allows hardlinks
@@ -98,6 +99,25 @@ volumes:
   - /mnt/mirrors:/mirrors:rw
 ```
 
+In **Symlink** mode, this restriction goes away — mirrors can live on a separate mount from the source:
+
+```yaml
+# ✅ Fine in Symlink mode — separate mounts, mirror symlinks point back at the source mount
+volumes:
+  - /mnt/movies:/movies:rw
+  - /mnt/mirrors:/mirrors:rw
+```
+
+## Choosing a Link Mode
+
+| | Hardlink (default) | Symlink |
+| --- | --- | --- |
+| Storage overhead | None | Negligible (a small link entry per file) |
+| Source/mirror on same filesystem? | Required | Not required |
+| Filesystem support | ext4, NTFS, APFS, XFS, btrfs, ZFS, HFS+ | Most modern filesystems, **except**: exFAT/FAT32 on Linux, where **neither** hardlinks nor symlinks are supported |
+
+> **exFAT/FAT32 on Linux:** if your media library lives on an exFAT or FAT32 drive mounted on Linux, switching to Symlink mode alone won't help — Linux's exFAT/FAT32 drivers can't store a symlink (or hardlink) entry at all. What matters is where the *mirror* files are created, not what they point at: point your mirror destination at a different, Linux-native filesystem (ext4, btrfs, etc.) instead. The symlinks stored there can still point back at media files sitting on the exFAT/FAT32 drive without any problem, since a symlink target is just a text path.
+
 ## Settings
 
 <img src="./docs/settings.png" width="700" alt="Settings Tab">
@@ -108,6 +128,7 @@ The **Settings tab** offers additional configuration:
 | ---------------------------- | ----------------------------------------------------------------------- |
 | **Auto-manage new users**    | Automatically assign a default language to newly created users          |
 | **Default language**         | Which language new users get (or "Default libraries" for source-only)   |
+| **Link mode**                | Hardlink (default) or Symlink — see [Choosing a Link Mode](#choosing-a-link-mode) |
 | **Sync after library scans** | Keep mirrors updated automatically after Jellyfin scans (default: on)   |
 | **File exclusions**          | Customize which file extensions to skip (metadata, images)              |
 | **Directory exclusions**     | Customize which directories to skip (e.g., `extrafanart`, `.trickplay`) |
@@ -125,7 +146,8 @@ The **Settings tab** offers additional configuration:
 
 **Mirrors not syncing?**
 
--   Check that source and destination are on the same filesystem
+-   In Hardlink mode, check that source and destination are on the same filesystem
+-   In Symlink mode, check that the mirror destination filesystem supports symlinks (exFAT/FAT32 on Linux do not)
 -   Verify write permissions on the destination path
 -   Look for errors in the mirror status (red error icon)
 
@@ -142,7 +164,7 @@ The **Settings tab** offers additional configuration:
 When you create a mirror, Polyglot:
 
 1. Walks the source library directory
-2. Creates **hardlinks** for media files (video, audio, subtitles)
+2. Creates **hardlinks or symlinks** (depending on the configured Link Mode) for media files (video, audio, subtitles)
 3. **Skips** metadata files (`.nfo`, images) and metadata directories
 4. Creates a Jellyfin library configured for your target language
 5. Triggers a library scan to fetch metadata in the new language

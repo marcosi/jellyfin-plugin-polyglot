@@ -86,6 +86,25 @@
                         </div>
 
                         <div class="verticalSection">
+                            <h3 class="sectionTitle">Mirroring</h3>
+
+                            <div class="selectContainer" style="margin-bottom: 1em;">
+                                <label class="selectLabel" for="linkMode">Link Mode</label>
+                                <select id="linkMode" is="emby-select">
+                                    <option value="Hardlink">Hardlink</option>
+                                    <option value="Symlink">Symlink</option>
+                                </select>
+                                <div class="fieldDescription">
+                                    How mirrored files are linked back to their source. <strong>Hardlink</strong> (default) requires the mirror destination to be on the
+                                    same filesystem as the source library, with zero overhead. <strong>Symlink</strong> can point across filesystems/mounts, but the
+                                    symlink itself must be stored on a filesystem that supports symlinks - notably, exFAT/FAT32 do not support symlinks (or hardlinks)
+                                    on Linux, so a mirror destination on such a drive won't work in either mode; use a different, Linux-native filesystem (ext4, btrfs, etc.)
+                                    for the mirror destination instead.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="verticalSection">
                             <h3 class="sectionTitle">Sync Behavior</h3>
                             
                             <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom: 1em;">
@@ -132,13 +151,13 @@
                                     <h4 style="margin-bottom: 0.5em;">File Exclusions</h4>
                                     <p class="fieldDescription" style="margin-bottom: 1em;">
                                         Customize which files and directories are excluded from mirroring. 
-                                        Excluded files will not be hardlinked - typically metadata and images that should be language-specific.
+                                        Excluded files will not be mirrored - typically metadata and images that should be language-specific.
                                     </p>
                                     
                                     <div class="inputContainer" style="margin-bottom: 1.5em;">
                                         <label class="inputLabel inputLabelUnfocused" for="excludedExtensions" style="display: block; margin-bottom: 0.5em;">Excluded File Extensions</label>
                                         <textarea id="excludedExtensions" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
-                                        <div class="fieldDescription">File extensions to exclude from hardlinking (one per line, include the dot).</div>
+                                        <div class="fieldDescription">File extensions to exclude from mirroring (one per line, include the dot).</div>
                                     </div>
                                     
                                     <div class="inputContainer" style="margin-bottom: 1.5em;">
@@ -164,7 +183,7 @@
                     <div class="verticalSection" style="margin-top: 2em; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 2em;">
                         <h3 class="sectionTitle">Troubleshooting</h3>
                         <p class="fieldDescription" style="margin-bottom: 1em;">
-                            Generate a debug report to help diagnose issues. The report includes filesystem diagnostics, hardlink verification, 
+                            Generate a debug report to help diagnose issues. The report includes filesystem diagnostics, link verification, 
                             and recent logs. By default, paths and names are anonymized for privacy when sharing publicly.
                         </p>
                         
@@ -204,8 +223,8 @@
                                 
                                 <div class="checkboxContainer checkboxContainer-withDescription">
                                     <label class="emby-checkbox-label">
-                                        <input id="debugIncludeHardlinks" type="checkbox" is="emby-checkbox" checked />
-                                        <span>Hardlink verification</span>
+                                        <input id="debugIncludeLinkVerification" type="checkbox" is="emby-checkbox" checked />
+                                        <span>Link verification</span>
                                     </label>
                                 </div>
                             </div>
@@ -264,7 +283,7 @@
                                 <span class="material-icons folder_open" aria-hidden="true"></span>
                             </button>
                         </div>
-                        <div class="fieldDescription">Base path for mirror directories (must be on same filesystem as source)</div>
+                        <div class="fieldDescription">Base path for mirror directories (must be on the same filesystem as source when Link Mode is Hardlink; any filesystem when Symlink)</div>
                     </div>
                     <div class="formDialogFooter">
                         <button is="emby-button" type="button" class="raised button-cancel" onclick="PolyglotConfig.closeDialog('addAlternativeDialog')">Cancel</button>
@@ -292,7 +311,7 @@
                                 <span class="material-icons folder_open" aria-hidden="true"></span>
                             </button>
                 </div>
-                        <div class="fieldDescription">Path where mirrored files will be created (auto-suggested, must be on same filesystem as source)</div>
+                        <div class="fieldDescription">Path where mirrored files will be created (auto-suggested; must be on the same filesystem as source when Link Mode is Hardlink, any filesystem when Symlink)</div>
                 </div>
                     <div class="inputContainer">
                         <label class="inputLabel" for="mirrorTargetName">Library Name (optional)</label>
@@ -640,6 +659,7 @@
                     var autoManageNewUsers = settings.AutoManageNewUsers || false;
                     var defaultLangId = settings.DefaultLanguageAlternativeId || '';
                     var syncAfterScan = settings.SyncMirrorsAfterLibraryScan !== false;
+                    var linkMode = settings.LinkMode || 'Hardlink';
                     var extensions = settings.ExcludedExtensions || settings.DefaultExcludedExtensions || [];
                     var directories = settings.ExcludedDirectories || settings.DefaultExcludedDirectories || [];
                     var includedDirectories = settings.IncludedDirectories || settings.DefaultIncludedDirectories || [];
@@ -659,6 +679,7 @@
                     }
                     
                     document.getElementById('syncAfterLibraryScan').checked = syncAfterScan;
+                    document.getElementById('linkMode').value = linkMode;
                     document.getElementById('excludedExtensions').value = extensions.join('\n');
                     document.getElementById('excludedDirectories').value = directories.join('\n');
                     
@@ -672,6 +693,7 @@
                         AutoManageNewUsers: autoManageNewUsers,
                         DefaultLanguageAlternativeId: defaultLangId,
                         SyncMirrorsAfterLibraryScan: syncAfterScan,
+                        LinkMode: linkMode,
                         ExcludedExtensions: extensions.slice(), // copy array
                         ExcludedDirectories: directories.slice(), // copy array
                         IncludedDirectories: includedDirectories.slice() // copy array
@@ -858,7 +880,7 @@
 
                 deleteMirror: function(altId, sourceLibraryId) {
                     var self = this;
-                    Dashboard.confirm('Delete this mirror library? This will remove the Jellyfin library and its hardlinked files.', 'Confirm Delete', function(result) {
+                    Dashboard.confirm('Delete this mirror library? This will remove the Jellyfin library and its mirrored files.', 'Confirm Delete', function(result) {
                         if (result) {
                             Dashboard.showLoadingMsg();
                             self.apiDelete('Polyglot/Alternatives/' + altId + '/Libraries/' + sourceLibraryId + '?deleteLibrary=true&deleteFiles=true').then(function() {
@@ -940,7 +962,8 @@
                     var currentAutoManage = document.getElementById('autoManageNewUsers').checked;
                     var currentDefaultLang = document.getElementById('defaultLanguageAlternative').value || '';
                     var currentSyncAfterScan = document.getElementById('syncAfterLibraryScan').checked;
-                        
+                    var currentLinkMode = document.getElementById('linkMode').value;
+
                         // Parse exclusion settings (split by newlines, filter empty, trim whitespace)
                         var extensionsText = document.getElementById('excludedExtensions').value;
                         var directoriesText = document.getElementById('excludedDirectories').value;
@@ -972,6 +995,7 @@
                         settingsUpdate.DefaultLanguageAlternativeId = currentDefaultLang || null;
                         settingsUpdate.DefaultLanguageAlternativeIdProvided = true;
                         settingsUpdate.SyncMirrorsAfterLibraryScan = currentSyncAfterScan;
+                        settingsUpdate.LinkMode = currentLinkMode;
                         settingsUpdate.ExcludedExtensions = currentExtensions;
                         settingsUpdate.ExcludedDirectories = currentDirectories;
                         settingsUpdate.IncludedDirectories = currentIncludedDirectories;
@@ -993,7 +1017,12 @@
                             settingsUpdate.SyncMirrorsAfterLibraryScan = currentSyncAfterScan;
                             hasChanges = true;
                         }
-                        
+
+                        if (currentLinkMode !== this.initialSettings.LinkMode) {
+                            settingsUpdate.LinkMode = currentLinkMode;
+                            hasChanges = true;
+                        }
+
                         if (!this.arraysEqual(currentExtensions, this.initialSettings.ExcludedExtensions)) {
                             settingsUpdate.ExcludedExtensions = currentExtensions;
                             hasChanges = true;
@@ -1033,6 +1062,7 @@
                             AutoManageNewUsers: config.Settings.AutoManageNewUsers || false,
                             DefaultLanguageAlternativeId: config.Settings.DefaultLanguageAlternativeId || '',
                             SyncMirrorsAfterLibraryScan: config.Settings.SyncMirrorsAfterLibraryScan !== false,
+                            LinkMode: config.Settings.LinkMode || 'Hardlink',
                             ExcludedExtensions: (config.Settings.ExcludedExtensions || []).slice(),
                             ExcludedDirectories: (config.Settings.ExcludedDirectories || []).slice(),
                             IncludedDirectories: (config.Settings.IncludedDirectories || []).slice()
@@ -1058,14 +1088,14 @@
                     var includeLibraryNames = document.getElementById('debugIncludeLibraryNames').checked;
                     var includeUserNames = document.getElementById('debugIncludeUserNames').checked;
                     var includeFilesystem = document.getElementById('debugIncludeFilesystem').checked;
-                    var includeHardlinks = document.getElementById('debugIncludeHardlinks').checked;
+                    var includeLinkVerification = document.getElementById('debugIncludeLinkVerification').checked;
                     
                     var queryParams = [
                         'includeFilePaths=' + includeFilePaths,
                         'includeLibraryNames=' + includeLibraryNames,
                         'includeUserNames=' + includeUserNames,
                         'includeFilesystemDiagnostics=' + includeFilesystem,
-                        'includeHardlinkVerification=' + includeHardlinks
+                        'includeLinkVerification=' + includeLinkVerification
                     ].join('&');
                     
                     ApiClient.ajax({

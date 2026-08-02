@@ -1069,19 +1069,19 @@ public class PolyglotControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task AddLibraryMirror_DifferentFilesystems_ShouldReturn400()
+    public async Task AddLibraryMirror_DifferentFilesystems_HardlinkMode_ShouldReturn400()
     {
-        // DESIRED BEHAVIOR: Hardlinks require same filesystem. If source and target
-        // are on different filesystems, return 400 with clear error.
-        
+        // DESIRED BEHAVIOR: In Hardlink mode, source and target must be on the same
+        // filesystem. If they aren't, return 400 with a clear error.
+
         // Arrange
         var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
         var sourceLibraryId = Guid.NewGuid();
-        
+
         _mirrorServiceMock
             .Setup(s => s.ValidateMirrorConfiguration(sourceLibraryId, It.IsAny<string>()))
             .Returns((false, "Source path and target path are on different filesystems. Hardlinks require the same filesystem."));
-        
+
         var request = new AddLibraryMirrorRequest
         {
             SourceLibraryId = sourceLibraryId.ToString(),
@@ -1097,6 +1097,46 @@ public class PolyglotControllerTests : IDisposable
         var badRequest = (BadRequestObjectResult)result.Result!;
         ((string)badRequest.Value!).Should().Contain("filesystem",
             "error message should mention filesystem requirement");
+    }
+
+    [Fact]
+    public async Task AddLibraryMirror_DifferentFilesystems_SymlinkMode_ShouldSucceed()
+    {
+        // DESIRED BEHAVIOR: In Symlink mode, source and target are allowed to be on
+        // different filesystems - MirrorService.ValidateMirrorConfiguration accepts this.
+
+        // Arrange
+        var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        var sourceLibraryId = Guid.NewGuid();
+
+        _mirrorServiceMock
+            .Setup(s => s.ValidateMirrorConfiguration(sourceLibraryId, It.IsAny<string>()))
+            .Returns((true, null));
+
+        _mirrorServiceMock
+            .Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo { Id = sourceLibraryId, Name = "Movies", IsMirror = false }
+            });
+
+        _mirrorServiceMock
+            .Setup(s => s.CreateMirrorAsync(alternative.Id, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var request = new AddLibraryMirrorRequest
+        {
+            SourceLibraryId = sourceLibraryId.ToString(),
+            TargetPath = "/other-drive/test",
+            TargetLibraryName = "Test"
+        };
+
+        // Act
+        var result = await _controller.AddLibraryMirror(alternative.Id, request);
+
+        // Assert
+        result.Result.Should().NotBeOfType<BadRequestObjectResult>(
+            "Symlink mode should not reject cross-filesystem mirror targets");
     }
 
     [Fact]

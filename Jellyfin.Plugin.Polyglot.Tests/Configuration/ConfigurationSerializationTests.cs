@@ -214,6 +214,40 @@ public class ConfigurationSerializationTests
     }
 
     /// <summary>
+    /// Verifies that LinkMode defaults to Hardlink (backward compatibility for existing installs).
+    /// </summary>
+    [Fact]
+    public void Configuration_Default_LinkModeIsHardlink()
+    {
+        // Arrange & Act
+        var config = new PluginConfiguration();
+
+        // Assert
+        config.LinkMode.Should().Be(LinkMode.Hardlink);
+    }
+
+    /// <summary>
+    /// Verifies that LinkMode is preserved across serialization for both enum values.
+    /// </summary>
+    [Theory]
+    [InlineData(LinkMode.Hardlink)]
+    [InlineData(LinkMode.Symlink)]
+    public void Configuration_WithLinkMode_CanSerializeAndDeserialize(LinkMode linkMode)
+    {
+        // Arrange
+        var config = new PluginConfiguration
+        {
+            LinkMode = linkMode
+        };
+
+        // Act
+        var result = SerializeAndDeserialize(config);
+
+        // Assert
+        result.LinkMode.Should().Be(linkMode);
+    }
+
+    /// <summary>
     /// Verifies that a fully populated configuration can be serialized and deserialized.
     /// This is a comprehensive test that exercises all fields.
     /// </summary>

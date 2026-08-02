@@ -27,10 +27,10 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie.mpeg")]
     [InlineData("/media/movies/Movie.vob")]
     [InlineData("/media/movies/Movie.3gp")]
-    public void ShouldHardlink_VideoFiles_ReturnsTrue(string filePath)
+    public void ShouldMirror_VideoFiles_ReturnsTrue(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue($"{filePath} is a video file and should be hardlinked");
@@ -53,10 +53,10 @@ public class FileClassifierTests
     [InlineData("/media/music/Song.opus")]
     [InlineData("/media/music/Song.ape")]
     [InlineData("/media/music/Song.mka")]
-    public void ShouldHardlink_AudioFiles_ReturnsTrue(string filePath)
+    public void ShouldMirror_AudioFiles_ReturnsTrue(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue($"{filePath} is an audio file and should be hardlinked");
@@ -77,10 +77,10 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie.pgs")]
     [InlineData("/media/movies/Movie.en.srt")]
     [InlineData("/media/movies/Movie.pt-BR.srt")]
-    public void ShouldHardlink_SubtitleFiles_ReturnsTrue(string filePath)
+    public void ShouldMirror_SubtitleFiles_ReturnsTrue(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue($"{filePath} is a subtitle file and should be hardlinked");
@@ -96,10 +96,10 @@ public class FileClassifierTests
     [InlineData("/media/tvshows/Show/tvshow.nfo")]
     [InlineData("/media/tvshows/Show/Season 1/season.nfo")]
     [InlineData("/media/tvshows/Show/Season 1/episode.nfo")]
-    public void ShouldHardlink_NfoFiles_ReturnsFalse(string filePath)
+    public void ShouldMirror_NfoFiles_ReturnsFalse(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse($"{filePath} is an NFO file and should be excluded");
@@ -122,10 +122,10 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie/landscape.jpg")]
     [InlineData("/media/movies/Movie/disc.png")]
     [InlineData("/media/movies/Movie/clearart.png")]
-    public void ShouldHardlink_ArtworkImages_ReturnsFalse(string filePath)
+    public void ShouldMirror_ArtworkImages_ReturnsFalse(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse($"{filePath} is an artwork file and should be excluded");
@@ -138,10 +138,10 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie/test.webp")]
     [InlineData("/media/movies/Movie/file.gif")]
     [InlineData("/media/movies/Movie/thumb.tbn")]
-    public void ShouldHardlink_AllImageFiles_ReturnsFalse(string filePath)
+    public void ShouldMirror_AllImageFiles_ReturnsFalse(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse($"{filePath} is an image file and should be excluded per the exclusion-based approach");
@@ -155,10 +155,10 @@ public class FileClassifierTests
     [InlineData("/media/tvshows/Show/Season 1/episode-thumb.jpg")]
     [InlineData("/media/tvshows/Show/Season 1/S01E01-thumb.jpg")]
     [InlineData("/media/tvshows/Show/Season 1/episode-poster.jpg")]
-    public void ShouldHardlink_EpisodeThumbnails_ReturnsFalse(string filePath)
+    public void ShouldMirror_EpisodeThumbnails_ReturnsFalse(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse($"{filePath} is an episode thumbnail and should be excluded");
@@ -173,10 +173,10 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie/backdrop-1.jpg")]
     [InlineData("/media/movies/Movie/fanart2.jpg")]
     [InlineData("/media/movies/Movie/fanart-2.jpg")]
-    public void ShouldHardlink_NumberedBackdrops_ReturnsFalse(string filePath)
+    public void ShouldMirror_NumberedBackdrops_ReturnsFalse(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse($"{filePath} is a numbered backdrop and should be excluded");
@@ -190,10 +190,10 @@ public class FileClassifierTests
     [InlineData("/media/tvshows/Show/season01-poster.jpg")]
     [InlineData("/media/tvshows/Show/season1-banner.jpg")]
     [InlineData("/media/tvshows/Show/season-all-poster.jpg")]
-    public void ShouldHardlink_SeasonSpecificImages_ReturnsFalse(string filePath)
+    public void ShouldMirror_SeasonSpecificImages_ReturnsFalse(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse($"{filePath} is a season-specific image and should be excluded");
@@ -238,26 +238,26 @@ public class FileClassifierTests
     }
 
     [Fact]
-    public void ShouldHardlink_FileInExcludedDirectory_ReturnsFalse()
+    public void ShouldMirror_FileInExcludedDirectory_ReturnsFalse()
     {
         // Arrange
         var filePath = "/media/movies/Movie/extrafanart/fanart1.mkv";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse("file is in an excluded directory (extrafanart)");
     }
 
     [Fact]
-    public void ShouldHardlink_FileInNestedExcludedDirectory_ReturnsFalse()
+    public void ShouldMirror_FileInNestedExcludedDirectory_ReturnsFalse()
     {
         // Arrange - using extrafanart which is still in excluded directories
         var filePath = "/media/movies/Movie/extrafanart/nested/fanart.mkv";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse("file is in a nested excluded directory");
@@ -268,20 +268,20 @@ public class FileClassifierTests
     #region Edge Cases
 
     [Fact]
-    public void ShouldHardlink_NullPath_ReturnsFalse()
+    public void ShouldMirror_NullPath_ReturnsFalse()
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(null!);
+        var result = FileClassifier.ShouldMirror(null!);
 
         // Assert
         result.Should().BeFalse("null path should return false");
     }
 
     [Fact]
-    public void ShouldHardlink_EmptyPath_ReturnsFalse()
+    public void ShouldMirror_EmptyPath_ReturnsFalse()
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(string.Empty);
+        var result = FileClassifier.ShouldMirror(string.Empty);
 
         // Assert
         result.Should().BeFalse("empty path should return false");
@@ -310,10 +310,10 @@ public class FileClassifierTests
     [Theory]
     [InlineData("/media/movies/Movie/movie.MKV")]
     [InlineData("/media/movies/Movie/movie.Mkv")]
-    public void ShouldHardlink_CaseInsensitiveExtension_ReturnsTrue(string filePath)
+    public void ShouldMirror_CaseInsensitiveExtension_ReturnsTrue(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue("extension matching should be case-insensitive");
@@ -322,10 +322,10 @@ public class FileClassifierTests
     [Theory]
     [InlineData("/media/movies/Movie/POSTER.JPG")]
     [InlineData("/media/movies/Movie/Poster.Jpg")]
-    public void ShouldHardlink_CaseInsensitiveImageExclusion_ReturnsFalse(string filePath)
+    public void ShouldMirror_CaseInsensitiveImageExclusion_ReturnsFalse(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeFalse("image exclusion should be case-insensitive");
@@ -341,10 +341,10 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie/deleted scenes/deleted.mkv")]
     [InlineData("/media/movies/Movie/interviews/interview.mkv")]
     [InlineData("/media/movies/Movie/extras/extra.mkv")]
-    public void ShouldHardlink_FilesInExtrasFolders_ReturnsTrue(string filePath)
+    public void ShouldMirror_FilesInExtrasFolders_ReturnsTrue(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue($"{filePath} is in an extras folder but should be hardlinked");
@@ -357,10 +357,10 @@ public class FileClassifierTests
     [Theory]
     [InlineData("/media/movies/Movie/VIDEO_TS/VIDEO_TS.VOB")]
     [InlineData("/media/movies/Movie/BDMV/STREAM/00000.m2ts")]
-    public void ShouldHardlink_DiscStructureFiles_ReturnsTrue(string filePath)
+    public void ShouldMirror_DiscStructureFiles_ReturnsTrue(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue($"{filePath} is a disc structure file and should be hardlinked");
@@ -371,55 +371,55 @@ public class FileClassifierTests
     #region Custom Extension Tests
 
     [Fact]
-    public void ShouldHardlink_WithCustomExtensions_UsesCustomList()
+    public void ShouldMirror_WithCustomExtensions_UsesCustomList()
     {
         // Arrange - custom list that includes .mkv as excluded
         var customExtensions = new[] { ".mkv", ".txt" };
         var filePath = "/media/movies/Movie.mkv";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath, customExtensions, null);
+        var result = FileClassifier.ShouldMirror(filePath, customExtensions, null);
 
         // Assert
         result.Should().BeFalse("custom exclusions include .mkv");
     }
 
     [Fact]
-    public void ShouldHardlink_WithCustomExtensions_ExcludesJpgWhenRemoved()
+    public void ShouldMirror_WithCustomExtensions_ExcludesJpgWhenRemoved()
     {
         // Arrange - custom list that does NOT include .jpg
         var customExtensions = new[] { ".nfo" };
         var filePath = "/media/movies/Movie/poster.jpg";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath, customExtensions, null);
+        var result = FileClassifier.ShouldMirror(filePath, customExtensions, null);
 
         // Assert
         result.Should().BeTrue("custom exclusions do not include .jpg");
     }
 
     [Fact]
-    public void ShouldHardlink_WithEmptyCustomExtensions_HardlinksEverything()
+    public void ShouldMirror_WithEmptyCustomExtensions_HardlinksEverything()
     {
         // Arrange - empty custom list means nothing is excluded by extension
         var customExtensions = Array.Empty<string>();
         var filePath = "/media/movies/Movie/movie.nfo";
 
         // Act - pass empty for directories too so it doesn't get excluded by dir
-        var result = FileClassifier.ShouldHardlink(filePath, customExtensions, Array.Empty<string>());
+        var result = FileClassifier.ShouldMirror(filePath, customExtensions, Array.Empty<string>());
 
         // Assert
         result.Should().BeTrue("empty exclusions list means no files are excluded");
     }
 
     [Fact]
-    public void ShouldHardlink_WithNullCustomExtensions_UsesDefaults()
+    public void ShouldMirror_WithNullCustomExtensions_UsesDefaults()
     {
         // Arrange
         var filePath = "/media/movies/Movie/movie.nfo";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath, null, null);
+        var result = FileClassifier.ShouldMirror(filePath, null, null);
 
         // Assert
         result.Should().BeFalse(".nfo is in the default excluded extensions");
@@ -485,28 +485,28 @@ public class FileClassifierTests
     }
 
     [Fact]
-    public void ShouldHardlink_WithCustomDirectories_FileInCustomExcludedDir_ReturnsFalse()
+    public void ShouldMirror_WithCustomDirectories_FileInCustomExcludedDir_ReturnsFalse()
     {
         // Arrange
         var customDirs = new[] { "my_excluded_folder" };
         var filePath = "/media/movies/Movie/my_excluded_folder/video.mkv";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath, null, customDirs);
+        var result = FileClassifier.ShouldMirror(filePath, null, customDirs);
 
         // Assert
         result.Should().BeFalse("file is in a custom excluded directory");
     }
 
     [Fact]
-    public void ShouldHardlink_WithCustomDirectoriesRemovingMetadata_FileInMetadata_ReturnsTrue()
+    public void ShouldMirror_WithCustomDirectoriesRemovingMetadata_FileInMetadata_ReturnsTrue()
     {
         // Arrange - custom list that does NOT include "metadata"
         var customDirs = new[] { "extrafanart" };
         var filePath = "/media/movies/Movie/metadata/data.xml";
 
         // Act - also remove xml from excluded extensions
-        var result = FileClassifier.ShouldHardlink(filePath, Array.Empty<string>(), customDirs);
+        var result = FileClassifier.ShouldMirror(filePath, Array.Empty<string>(), customDirs);
 
         // Assert
         result.Should().BeTrue("custom exclusions do not include 'metadata' and no extensions are excluded");
@@ -605,10 +605,10 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie/.trickplay/tile.jpg")]
     [InlineData("/media/movies/Movie/.trickplay/segment/tile.jpg")]
     [InlineData("/media/movies/Movie/.actors/actor.jpg")]
-    public void ShouldHardlink_ImageFileInIncludedDirectory_ReturnsTrue(string filePath)
+    public void ShouldMirror_ImageFileInIncludedDirectory_ReturnsTrue(string filePath)
     {
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue($"{filePath} is in an included directory and should be hardlinked regardless of extension");
@@ -618,58 +618,58 @@ public class FileClassifierTests
     [InlineData("/media/movies/Movie/MovieName.trickplay/tile.jpg")]
     [InlineData("/media/movies/Movie/7 Prisoners (2021).trickplay/preview.jpg")]
     [InlineData("/media/movies/Movie/Episode S01E01.trickplay/segment/tile.bif")]
-    public void ShouldHardlink_FileInTrickplaySuffixDirectory_ReturnsTrue(string filePath)
+    public void ShouldMirror_FileInTrickplaySuffixDirectory_ReturnsTrue(string filePath)
     {
         // Act - Jellyfin creates trickplay directories named "{mediafile}.trickplay"
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue($"{filePath} is in a *.trickplay directory and should be hardlinked");
     }
 
     [Fact]
-    public void ShouldHardlink_FileInIncludedDirectory_BypassesExtensionExclusion()
+    public void ShouldMirror_FileInIncludedDirectory_BypassesExtensionExclusion()
     {
         // Arrange - .jpg would normally be excluded, but .trickplay is included
         var filePath = "/media/movies/Movie/.trickplay/preview.jpg";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath);
+        var result = FileClassifier.ShouldMirror(filePath);
 
         // Assert
         result.Should().BeTrue("files in included directories bypass extension exclusions");
     }
 
     [Fact]
-    public void ShouldHardlink_WithCustomIncludedDirectories_UsesCustomList()
+    public void ShouldMirror_WithCustomIncludedDirectories_UsesCustomList()
     {
         // Arrange - custom list that includes "custom_included"
         var customIncluded = new[] { "custom_included" };
         var filePath = "/media/movies/Movie/custom_included/image.jpg"; // .jpg normally excluded
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath, null, null, customIncluded);
+        var result = FileClassifier.ShouldMirror(filePath, null, null, customIncluded);
 
         // Assert
         result.Should().BeTrue("custom included directories override extension exclusions");
     }
 
     [Fact]
-    public void ShouldHardlink_WithEmptyIncludedDirectories_DoesNotBypassExclusions()
+    public void ShouldMirror_WithEmptyIncludedDirectories_DoesNotBypassExclusions()
     {
         // Arrange - empty included list means no bypass
         var emptyIncluded = Array.Empty<string>();
         var filePath = "/media/movies/Movie/.trickplay/preview.jpg";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath, null, null, emptyIncluded);
+        var result = FileClassifier.ShouldMirror(filePath, null, null, emptyIncluded);
 
         // Assert
         result.Should().BeFalse(".jpg is excluded and included directories list is empty");
     }
 
     [Fact]
-    public void ShouldHardlink_ExcludedDirectoryTakesPrecedenceOverIncluded()
+    public void ShouldMirror_ExcludedDirectoryTakesPrecedenceOverIncluded()
     {
         // Arrange - if a directory is in BOTH lists, excluded wins (safety)
         var excludedDirs = new[] { "both" };
@@ -677,7 +677,7 @@ public class FileClassifierTests
         var filePath = "/media/movies/Movie/both/file.mkv";
 
         // Act
-        var result = FileClassifier.ShouldHardlink(filePath, null, excludedDirs, includedDirs);
+        var result = FileClassifier.ShouldMirror(filePath, null, excludedDirs, includedDirs);
 
         // Assert
         result.Should().BeFalse("excluded directories take precedence over included directories");

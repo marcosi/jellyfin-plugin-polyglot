@@ -156,6 +156,97 @@ public class DebugReportServiceTests : IDisposable
 
     #endregion
 
+    #region Link Verification
+
+    [Fact]
+    public async Task GenerateReportAsync_SymlinkMode_VerifiesRealSymlinks()
+    {
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        var sourceDir = Path.Combine(tempDir, "source");
+        var targetDir = Path.Combine(tempDir, "target");
+        Directory.CreateDirectory(sourceDir);
+        Directory.CreateDirectory(targetDir);
+
+        var sourceFile = Path.Combine(sourceDir, "movie.mkv");
+        File.WriteAllText(sourceFile, "video content");
+        var targetFile = Path.Combine(targetDir, "movie.mkv");
+        File.CreateSymbolicLink(targetFile, sourceFile);
+
+        try
+        {
+            _context.Configuration.LinkMode = LinkMode.Symlink;
+            var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR", tempDir);
+            _context.AddMirror(alternative, Guid.NewGuid(), "Movies", null, targetDir);
+
+            // Act
+            var report = await _service.GenerateReportAsync(new DebugReportOptions { IncludeLinkVerification = true });
+
+            // Assert
+            report.LinkVerification.Should().NotBeNull();
+            report.LinkVerification!.Success.Should().BeTrue();
+            report.LinkVerification.SamplesChecked.Should().Be(1);
+            report.LinkVerification.ValidLinks.Should().Be(1);
+            report.LinkVerification.Samples[0].Target.Should().NotBeNull();
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public async Task GenerateReportAsync_SymlinkMode_BrokenSymlink_ReportsInvalid()
+    {
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        var sourceDir = Path.Combine(tempDir, "source");
+        var targetDir = Path.Combine(tempDir, "target");
+        Directory.CreateDirectory(sourceDir);
+        Directory.CreateDirectory(targetDir);
+
+        var sourceFile = Path.Combine(sourceDir, "movie.mkv");
+        File.WriteAllText(sourceFile, "video content");
+        var targetFile = Path.Combine(targetDir, "movie.mkv");
+        File.CreateSymbolicLink(targetFile, sourceFile);
+        File.Delete(sourceFile);
+
+        try
+        {
+            _context.Configuration.LinkMode = LinkMode.Symlink;
+            var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR", tempDir);
+            _context.AddMirror(alternative, Guid.NewGuid(), "Movies", null, targetDir);
+
+            // Act
+            var report = await _service.GenerateReportAsync(new DebugReportOptions { IncludeLinkVerification = true });
+
+            // Assert
+            report.LinkVerification.Should().NotBeNull();
+            report.LinkVerification!.Success.Should().BeFalse();
+            report.LinkVerification.ValidLinks.Should().Be(0);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    #endregion
+
     #region GenerateMarkdownReportAsync
 
     [Fact]

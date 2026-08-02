@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Jellyfin.Plugin.Polyglot.Helpers;
+using Jellyfin.Plugin.Polyglot.Models;
 using Xunit;
 
 namespace Jellyfin.Plugin.Polyglot.Tests.Helpers;
@@ -498,6 +499,381 @@ public class FileSystemHelperTests
 
         // Assert
         action.Should().NotThrow("method should handle null/empty paths gracefully");
+    }
+
+    #endregion
+
+    #region CreateSymLink Validation Tests
+
+    [Fact]
+    public void CreateSymLink_NullSourcePath_ThrowsArgumentNullException()
+    {
+        var action = () => FileSystemHelper.CreateSymLink(null!, "/target/file");
+
+        action.Should().Throw<ArgumentNullException>()
+            .And.ParamName.Should().Be("sourcePath");
+    }
+
+    [Fact]
+    public void CreateSymLink_EmptySourcePath_ThrowsArgumentNullException()
+    {
+        var action = () => FileSystemHelper.CreateSymLink(string.Empty, "/target/file");
+
+        action.Should().Throw<ArgumentNullException>()
+            .And.ParamName.Should().Be("sourcePath");
+    }
+
+    [Fact]
+    public void CreateSymLink_NullLinkPath_ThrowsArgumentNullException()
+    {
+        var action = () => FileSystemHelper.CreateSymLink("/source/file", null!);
+
+        action.Should().Throw<ArgumentNullException>()
+            .And.ParamName.Should().Be("linkPath");
+    }
+
+    [Fact]
+    public void CreateSymLink_EmptyLinkPath_ThrowsArgumentNullException()
+    {
+        var action = () => FileSystemHelper.CreateSymLink("/source/file", string.Empty);
+
+        action.Should().Throw<ArgumentNullException>()
+            .And.ParamName.Should().Be("linkPath");
+    }
+
+    [Fact]
+    public void CreateSymLink_NonExistentSourceFile_ReturnsFalse()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var linkPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+
+        var result = FileSystemHelper.CreateSymLink(sourcePath, linkPath);
+
+        result.Should().BeFalse("non-existent source file should return false");
+    }
+
+    #endregion
+
+    #region CreateSymLink Integration Tests (require actual filesystem)
+
+    [Fact]
+    public void CreateSymLink_ValidSourceFile_CreatesSymlinkPointingAtSource()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "link.txt");
+        File.WriteAllText(sourcePath, "test content");
+
+        try
+        {
+            var result = FileSystemHelper.CreateSymLink(sourcePath, linkPath);
+
+            result.Should().BeTrue("symlink should be created successfully");
+            File.Exists(linkPath).Should().BeTrue("link file should exist");
+            File.ReadAllText(linkPath).Should().Be("test content", "link should resolve to same content as source");
+
+            var linkTarget = new FileInfo(linkPath).LinkTarget;
+            linkTarget.Should().NotBeNull("link should report a link target");
+            var resolved = File.ResolveLinkTarget(linkPath, returnFinalTarget: true);
+            resolved!.FullName.Should().Be(Path.GetFullPath(sourcePath));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public void CreateSymLink_CreatesParentDirectories()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "subdir", "nested", "link.txt");
+        File.WriteAllText(sourcePath, "test content");
+
+        try
+        {
+            var result = FileSystemHelper.CreateSymLink(sourcePath, linkPath);
+
+            result.Should().BeTrue("symlink should be created successfully");
+            Directory.Exists(Path.Combine(tempDir, "subdir", "nested")).Should().BeTrue("parent directories should be created");
+            File.Exists(linkPath).Should().BeTrue("link file should exist");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public void CreateSymLink_OverwritesExistingFile()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "link.txt");
+        File.WriteAllText(sourcePath, "new content");
+        File.WriteAllText(linkPath, "old content");
+
+        try
+        {
+            var result = FileSystemHelper.CreateSymLink(sourcePath, linkPath);
+
+            result.Should().BeTrue("symlink should be created successfully");
+            File.ReadAllText(linkPath).Should().Be("new content", "link should resolve to new source content");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public void CreateSymLink_TargetIsDirectory_ReturnsFalse()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "target_dir");
+        File.WriteAllText(sourcePath, "test content");
+        Directory.CreateDirectory(linkPath);
+
+        try
+        {
+            var result = FileSystemHelper.CreateSymLink(sourcePath, linkPath);
+
+            result.Should().BeFalse("creating a symlink where a directory exists should fail gracefully");
+            Directory.Exists(linkPath).Should().BeTrue("the directory should not be deleted");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    #endregion
+
+    #region CreateLink Dispatcher Tests
+
+    [Fact]
+    public void CreateLink_HardlinkMode_CreatesHardlink()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "link.txt");
+        File.WriteAllText(sourcePath, "test content");
+
+        try
+        {
+            var result = FileSystemHelper.CreateLink(sourcePath, linkPath, LinkMode.Hardlink);
+
+            result.Should().BeTrue();
+            new FileInfo(linkPath).LinkTarget.Should().BeNull("a hardlink is not a reparse point/symlink");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public void CreateLink_SymlinkMode_CreatesSymlink()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "link.txt");
+        File.WriteAllText(sourcePath, "test content");
+
+        try
+        {
+            var result = FileSystemHelper.CreateLink(sourcePath, linkPath, LinkMode.Symlink);
+
+            result.Should().BeTrue();
+            new FileInfo(linkPath).LinkTarget.Should().NotBeNull("symlink mode should create a real symlink");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    #endregion
+
+    #region IsValidLink Tests
+
+    [Fact]
+    public void IsValidLink_NonExistentPath_ReturnsFalse()
+    {
+        var linkPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+
+        FileSystemHelper.IsValidLink(linkPath, LinkMode.Symlink).Should().BeFalse();
+        FileSystemHelper.IsValidLink(linkPath, LinkMode.Hardlink).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsValidLink_HardlinkMode_ExistingFile_ReturnsTrue()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "link.txt");
+        File.WriteAllText(sourcePath, "test content");
+
+        try
+        {
+            FileSystemHelper.CreateHardLink(sourcePath, linkPath);
+
+            FileSystemHelper.IsValidLink(linkPath, LinkMode.Hardlink).Should().BeTrue();
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public void IsValidLink_SymlinkMode_ValidSymlink_ReturnsTrue()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "link.txt");
+        File.WriteAllText(sourcePath, "test content");
+
+        try
+        {
+            FileSystemHelper.CreateSymLink(sourcePath, linkPath);
+
+            FileSystemHelper.IsValidLink(linkPath, LinkMode.Symlink).Should().BeTrue();
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public void IsValidLink_SymlinkMode_RegularFileNotSymlink_ReturnsFalse()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var filePath = Path.Combine(tempDir, "regular.txt");
+        File.WriteAllText(filePath, "test content");
+
+        try
+        {
+            FileSystemHelper.IsValidLink(filePath, LinkMode.Symlink).Should().BeFalse("a regular file is not a symlink");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    [Fact]
+    public void IsValidLink_SymlinkMode_BrokenSymlink_ReturnsFalse()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var sourcePath = Path.Combine(tempDir, "source.txt");
+        var linkPath = Path.Combine(tempDir, "link.txt");
+        File.WriteAllText(sourcePath, "test content");
+
+        try
+        {
+            FileSystemHelper.CreateSymLink(sourcePath, linkPath);
+            File.Delete(sourcePath);
+
+            FileSystemHelper.IsValidLink(linkPath, LinkMode.Symlink).Should().BeFalse("target no longer exists");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
     }
 
     #endregion

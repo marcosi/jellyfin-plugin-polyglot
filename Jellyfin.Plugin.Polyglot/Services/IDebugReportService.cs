@@ -59,10 +59,10 @@ public class DebugReportOptions
     public bool IncludeFilesystemDiagnostics { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets whether to include hardlink verification tests.
+    /// Gets or sets whether to include link verification tests.
     /// Default: true.
     /// </summary>
-    public bool IncludeHardlinkVerification { get; set; } = true;
+    public bool IncludeLinkVerification { get; set; } = true;
 }
 
 /// <summary>
@@ -101,9 +101,9 @@ public class DebugReport
     public List<FilesystemDiagnostics> FilesystemInfo { get; set; } = new();
 
     /// <summary>
-    /// Gets or sets the hardlink verification results.
+    /// Gets or sets the link verification results.
     /// </summary>
-    public HardlinkVerification? HardlinkVerification { get; set; }
+    public LinkVerification? LinkVerification { get; set; }
 
     /// <summary>
     /// Gets or sets the user distribution.
@@ -201,6 +201,11 @@ public class ConfigurationSummary
     /// Gets or sets the number of excluded directories.
     /// </summary>
     public int ExcludedDirectoryCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the configured link mode (hardlink or symlink).
+    /// </summary>
+    public LinkMode LinkMode { get; set; }
 }
 
 /// <summary>
@@ -326,12 +331,12 @@ public class FilesystemDiagnostics
 }
 
 /// <summary>
-/// Hardlink verification results.
+/// Link verification results.
 /// </summary>
-public class HardlinkVerification
+public class LinkVerification
 {
     /// <summary>
-    /// Gets or sets whether hardlinks appear to be working.
+    /// Gets or sets whether links appear to be working.
     /// </summary>
     public bool Success { get; set; }
 
@@ -346,25 +351,25 @@ public class HardlinkVerification
     public int SamplesChecked { get; set; }
 
     /// <summary>
-    /// Gets or sets the number of valid hardlinks found.
+    /// Gets or sets the number of valid links found.
     /// </summary>
-    public int ValidHardlinks { get; set; }
+    public int ValidLinks { get; set; }
 
     /// <summary>
-    /// Gets or sets the number of broken/invalid hardlinks.
+    /// Gets or sets the number of broken/invalid links.
     /// </summary>
-    public int BrokenHardlinks { get; set; }
+    public int BrokenLinks { get; set; }
 
     /// <summary>
     /// Gets or sets detailed sample results.
     /// </summary>
-    public List<HardlinkSample> Samples { get; set; } = new();
+    public List<LinkSample> Samples { get; set; } = new();
 }
 
 /// <summary>
-/// Individual hardlink sample check.
+/// Individual link sample check.
 /// </summary>
-public class HardlinkSample
+public class LinkSample
 {
     /// <summary>
     /// Gets or sets the file path (may be anonymized).
@@ -372,14 +377,19 @@ public class HardlinkSample
     public string FilePath { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets whether the file is a valid hardlink.
+    /// Gets or sets whether the file is a valid link.
     /// </summary>
     public bool IsValid { get; set; }
 
     /// <summary>
-    /// Gets or sets the link count (should be > 1 for hardlinks).
+    /// Gets or sets the OS link count (hardlink mode only; should be > 1 for valid hardlinks).
     /// </summary>
     public int LinkCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the resolved symlink target (symlink mode only, may be anonymized).
+    /// </summary>
+    public string? Target { get; set; }
 
     /// <summary>
     /// Gets or sets any error message.

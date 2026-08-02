@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using Jellyfin.Plugin.Polyglot.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Polyglot.Helpers;
@@ -101,6 +102,116 @@ public static class FileSystemHelper
         catch (Exception ex)
         {
             logger?.LogError(ex, "Unix hardlink creation failed");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Creates a link at the specified path pointing to the source file, using the given link mode.
+    /// </summary>
+    /// <param name="sourcePath">The source file to link to.</param>
+    /// <param name="linkPath">The path where the link will be created.</param>
+    /// <param name="mode">Whether to create a hardlink or a symlink.</param>
+    /// <param name="logger">Optional logger for diagnostics.</param>
+    /// <returns>True if the link was created successfully.</returns>
+    public static bool CreateLink(string sourcePath, string linkPath, LinkMode mode, ILogger? logger = null)
+    {
+        return mode == LinkMode.Symlink
+            ? CreateSymLink(sourcePath, linkPath, logger)
+            : CreateHardLink(sourcePath, linkPath, logger);
+    }
+
+    /// <summary>
+    /// Creates a symlink at the specified path pointing to the source file.
+    /// Unlike hardlinks, symlinks can cross filesystem/mount boundaries - the only
+    /// requirement is that the filesystem the symlink itself is stored on supports
+    /// symlinks (notably, exFAT/FAT32 do not on Linux).
+    /// </summary>
+    /// <param name="sourcePath">The source file to link to.</param>
+    /// <param name="linkPath">The path where the symlink will be created.</param>
+    /// <param name="logger">Optional logger for diagnostics.</param>
+    /// <returns>True if the symlink was created successfully.</returns>
+    public static bool CreateSymLink(string sourcePath, string linkPath, ILogger? logger = null)
+    {
+        if (string.IsNullOrEmpty(sourcePath))
+        {
+            throw new ArgumentNullException(nameof(sourcePath));
+        }
+
+        if (string.IsNullOrEmpty(linkPath))
+        {
+            throw new ArgumentNullException(nameof(linkPath));
+        }
+
+        if (!File.Exists(sourcePath))
+        {
+            logger?.LogWarning("Source file does not exist: {SourcePath}", sourcePath);
+            return false;
+        }
+
+        // Ensure target directory exists
+        var targetDir = Path.GetDirectoryName(linkPath);
+        if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
+        {
+            Directory.CreateDirectory(targetDir);
+        }
+
+        // Remove existing file/symlink if present
+        if (File.Exists(linkPath))
+        {
+            File.Delete(linkPath);
+        }
+        else if (Directory.Exists(linkPath))
+        {
+            logger?.LogWarning("Cannot create symlink, a directory already exists at {LinkPath}", linkPath);
+            return false;
+        }
+
+        try
+        {
+            File.CreateSymbolicLink(linkPath, Path.GetFullPath(sourcePath));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "Failed to create symlink from {Source} to {Link}", sourcePath, linkPath);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a link at the given path is valid for the given link mode.
+    /// </summary>
+    /// <param name="linkPath">The path of the link to check.</param>
+    /// <param name="mode">The link mode to validate against.</param>
+    /// <returns>True if the link appears valid for the given mode.</returns>
+    public static bool IsValidLink(string linkPath, LinkMode mode)
+    {
+        if (string.IsNullOrEmpty(linkPath) || !File.Exists(linkPath))
+        {
+            return false;
+        }
+
+        if (mode == LinkMode.Hardlink)
+        {
+            // Without shelling out for a link count, all we can assert here is that the file exists.
+            // Callers that need real hardlink verification (link count > 1) use DebugReportService.
+            return true;
+        }
+
+        try
+        {
+            var linkTarget = new FileInfo(linkPath).LinkTarget;
+            if (linkTarget == null)
+            {
+                return false;
+            }
+
+            var resolved = File.ResolveLinkTarget(linkPath, returnFinalTarget: true);
+            return resolved != null && File.Exists(resolved.FullName);
+        }
+        catch
+        {
             return false;
         }
     }

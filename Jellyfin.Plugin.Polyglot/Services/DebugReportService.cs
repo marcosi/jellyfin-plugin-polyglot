@@ -121,10 +121,10 @@ public partial class DebugReportService : IDebugReportService
             report.FilesystemInfo = GetFilesystemDiagnostics(options);
         }
 
-        // Add hardlink verification if requested
-        if (options.IncludeHardlinkVerification)
+        // Add link verification if requested
+        if (options.IncludeLinkVerification)
         {
-            report.HardlinkVerification = await VerifyHardlinksAsync(options, cancellationToken).ConfigureAwait(false);
+            report.LinkVerification = await VerifyLinksAsync(options, cancellationToken).ConfigureAwait(false);
         }
 
         // Add user details if requested
@@ -167,7 +167,8 @@ public partial class DebugReportService : IDebugReportService
             autoManageNewUsers,
             syncAfterLibraryScan,
             excludedExtensionCount,
-            excludedDirectoryCount
+            excludedDirectoryCount,
+            linkMode
         ) = _configService.Read(c => (
             c.LanguageAlternatives.Count,
             c.LanguageAlternatives.Sum(a => a.MirroredLibraries.Count),
@@ -175,7 +176,8 @@ public partial class DebugReportService : IDebugReportService
             c.AutoManageNewUsers,
             c.SyncMirrorsAfterLibraryScan,
             c.ExcludedExtensions.Count,
-            c.ExcludedDirectories.Count
+            c.ExcludedDirectories.Count,
+            c.LinkMode
         ));
 
         return new ConfigurationSummary
@@ -186,7 +188,8 @@ public partial class DebugReportService : IDebugReportService
             AutoManageNewUsers = autoManageNewUsers,
             SyncAfterLibraryScan = syncAfterLibraryScan,
             ExcludedExtensionCount = excludedExtensionCount,
-            ExcludedDirectoryCount = excludedDirectoryCount
+            ExcludedDirectoryCount = excludedDirectoryCount,
+            LinkMode = linkMode
         };
     }
 
@@ -618,12 +621,13 @@ public partial class DebugReportService : IDebugReportService
         return diag;
     }
 
-    private async Task<HardlinkVerification?> VerifyHardlinksAsync(DebugReportOptions options, CancellationToken cancellationToken)
+    private async Task<LinkVerification?> VerifyLinksAsync(DebugReportOptions options, CancellationToken cancellationToken)
     {
         var alternatives = _configService.Read(c => c.LanguageAlternatives.ToList());
+        var linkMode = _configService.Read(c => c.LinkMode);
 
-        var verification = new HardlinkVerification();
-        var samples = new List<HardlinkSample>();
+        var verification = new LinkVerification();
+        var samples = new List<LinkSample>();
 
         foreach (var alt in alternatives)
         {
@@ -646,7 +650,9 @@ public partial class DebugReportService : IDebugReportService
 
                     foreach (var file in files)
                     {
-                        var sample = VerifyHardlink(file, options);
+                        var sample = linkMode == LinkMode.Symlink
+                            ? VerifySymlinkSample(file, options)
+                            : VerifyHardlinkSample(file, options);
                         samples.Add(sample);
 
                         if (samples.Count >= 10)
@@ -672,38 +678,40 @@ public partial class DebugReportService : IDebugReportService
             }
         }
 
+        var linkNoun = linkMode == LinkMode.Symlink ? "symlinks" : "hardlinks";
+
         verification.Samples = samples;
         verification.SamplesChecked = samples.Count;
-        verification.ValidHardlinks = samples.Count(s => s.IsValid);
-        verification.BrokenHardlinks = samples.Count(s => !s.IsValid && s.Error == null);
+        verification.ValidLinks = samples.Count(s => s.IsValid);
+        verification.BrokenLinks = samples.Count(s => !s.IsValid && s.Error == null);
 
         if (samples.Count == 0)
         {
             verification.Success = true;
             verification.Message = "No mirror files found to verify";
         }
-        else if (verification.ValidHardlinks == samples.Count)
+        else if (verification.ValidLinks == samples.Count)
         {
             verification.Success = true;
-            verification.Message = $"All {samples.Count} sampled files are valid hardlinks";
+            verification.Message = $"All {samples.Count} sampled files are valid {linkNoun}";
         }
-        else if (verification.ValidHardlinks > 0)
+        else if (verification.ValidLinks > 0)
         {
             verification.Success = false;
-            verification.Message = $"{verification.ValidHardlinks}/{samples.Count} files are valid hardlinks, {verification.BrokenHardlinks} appear to be copies";
+            verification.Message = $"{verification.ValidLinks}/{samples.Count} files are valid {linkNoun}, {verification.BrokenLinks} appear to be copies";
         }
         else
         {
             verification.Success = false;
-            verification.Message = "No valid hardlinks found - files may be copies instead of hardlinks";
+            verification.Message = $"No valid {linkNoun} found - files may be copies instead";
         }
 
         return await Task.FromResult(verification).ConfigureAwait(false);
     }
 
-    private static HardlinkSample VerifyHardlink(string filePath, DebugReportOptions options)
+    private static LinkSample VerifyHardlinkSample(string filePath, DebugReportOptions options)
     {
-        var sample = new HardlinkSample
+        var sample = new LinkSample
         {
             FilePath = options.IncludeFilePaths ? filePath : $"[file: {Path.GetExtension(filePath)}]"
         };
@@ -727,6 +735,41 @@ public partial class DebugReportService : IDebugReportService
             }
 
             sample.IsValid = sample.LinkCount > 1;
+        }
+        catch (Exception ex)
+        {
+            sample.Error = ex.Message;
+        }
+
+        return sample;
+    }
+
+    private static LinkSample VerifySymlinkSample(string filePath, DebugReportOptions options)
+    {
+        var sample = new LinkSample
+        {
+            FilePath = options.IncludeFilePaths ? filePath : $"[file: {Path.GetExtension(filePath)}]"
+        };
+
+        try
+        {
+            var fileInfo = new FileInfo(filePath);
+            if (!fileInfo.Exists)
+            {
+                sample.Error = "File not found";
+                return sample;
+            }
+
+            var linkTarget = fileInfo.LinkTarget;
+            if (linkTarget == null)
+            {
+                sample.Error = "Not a symlink";
+                return sample;
+            }
+
+            var resolved = File.ResolveLinkTarget(filePath, returnFinalTarget: true);
+            sample.IsValid = resolved != null && File.Exists(resolved.FullName);
+            sample.Target = options.IncludeFilePaths ? linkTarget : $"[target: {Path.GetExtension(linkTarget)}]";
         }
         catch (Exception ex)
         {
@@ -881,6 +924,7 @@ public partial class DebugReportService : IDebugReportService
         sb.AppendLine($"- Sync after library scan: {(report.Configuration.SyncAfterLibraryScan ? "Yes" : "No")}");
         sb.AppendLine($"- Excluded extensions: {report.Configuration.ExcludedExtensionCount}");
         sb.AppendLine($"- Excluded directories: {report.Configuration.ExcludedDirectoryCount}");
+        sb.AppendLine($"- Link mode: {report.Configuration.LinkMode}");
         sb.AppendLine();
 
         // Mirror Health
@@ -958,16 +1002,18 @@ public partial class DebugReportService : IDebugReportService
             sb.AppendLine();
         }
 
-        // Hardlink Verification
-        if (report.HardlinkVerification != null)
+        // Link Verification
+        if (report.LinkVerification != null)
         {
-            sb.AppendLine("## Hardlink Verification");
-            var hl = report.HardlinkVerification;
+            var isSymlinkMode = report.Configuration.LinkMode == LinkMode.Symlink;
+
+            sb.AppendLine("## Link Verification");
+            var hl = report.LinkVerification;
             sb.AppendLine($"- **Status:** {(hl.Success ? "✓ OK" : "✗ Issues Found")}");
             sb.AppendLine($"- **Message:** {hl.Message}");
             sb.AppendLine($"- **Samples Checked:** {hl.SamplesChecked}");
-            sb.AppendLine($"- **Valid Hardlinks:** {hl.ValidHardlinks}");
-            sb.AppendLine($"- **Broken/Copies:** {hl.BrokenHardlinks}");
+            sb.AppendLine($"- **Valid Links:** {hl.ValidLinks}");
+            sb.AppendLine($"- **Broken/Copies:** {hl.BrokenLinks}");
 
             if (hl.Samples.Count > 0)
             {
@@ -975,12 +1021,26 @@ public partial class DebugReportService : IDebugReportService
                 sb.AppendLine("<details>");
                 sb.AppendLine("<summary>Sample Details</summary>");
                 sb.AppendLine();
-                sb.AppendLine("| File | Valid | Link Count | Error |");
-                sb.AppendLine("|------|-------|------------|-------|");
 
-                foreach (var sample in hl.Samples)
+                if (isSymlinkMode)
                 {
-                    sb.AppendLine($"| {sample.FilePath} | {(sample.IsValid ? "✓" : "✗")} | {sample.LinkCount} | {sample.Error ?? "-"} |");
+                    sb.AppendLine("| File | Valid | Target | Error |");
+                    sb.AppendLine("|------|-------|--------|-------|");
+
+                    foreach (var sample in hl.Samples)
+                    {
+                        sb.AppendLine($"| {sample.FilePath} | {(sample.IsValid ? "✓" : "✗")} | {sample.Target ?? "-"} | {sample.Error ?? "-"} |");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("| File | Valid | Link Count | Error |");
+                    sb.AppendLine("|------|-------|------------|-------|");
+
+                    foreach (var sample in hl.Samples)
+                    {
+                        sb.AppendLine($"| {sample.FilePath} | {(sample.IsValid ? "✓" : "✗")} | {sample.LinkCount} | {sample.Error ?? "-"} |");
+                    }
                 }
 
                 sb.AppendLine();

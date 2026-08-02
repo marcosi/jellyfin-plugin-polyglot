@@ -100,7 +100,8 @@ public class PolyglotController : ControllerBase
             IncludedDirectories = c.IncludedDirectories.ToList(),
             c.AutoManageNewUsers,
             c.DefaultLanguageAlternativeId,
-            c.SyncMirrorsAfterLibraryScan
+            c.SyncMirrorsAfterLibraryScan,
+            c.LinkMode
         });
 
         var response = new UIConfigResponse
@@ -115,6 +116,7 @@ public class PolyglotController : ControllerBase
                 AutoManageNewUsers = configData.AutoManageNewUsers,
                 DefaultLanguageAlternativeId = configData.DefaultLanguageAlternativeId,
                 SyncMirrorsAfterLibraryScan = configData.SyncMirrorsAfterLibraryScan,
+                LinkMode = configData.LinkMode,
                 ExcludedExtensions = configData.ExcludedExtensions,
                 ExcludedDirectories = configData.ExcludedDirectories,
                 IncludedDirectories = configData.IncludedDirectories,
@@ -176,6 +178,11 @@ public class PolyglotController : ControllerBase
             if (settings.SyncMirrorsAfterLibraryScan.HasValue)
             {
                 config.SyncMirrorsAfterLibraryScan = settings.SyncMirrorsAfterLibraryScan.Value;
+            }
+
+            if (settings.LinkMode.HasValue)
+            {
+                config.LinkMode = settings.LinkMode.Value;
             }
 
             if (settings.ExcludedExtensions != null)
@@ -839,7 +846,7 @@ public class PolyglotController : ControllerBase
         [FromQuery] bool includeLibraryNames = false,
         [FromQuery] bool includeUserNames = false,
         [FromQuery] bool includeFilesystemDiagnostics = true,
-        [FromQuery] bool includeHardlinkVerification = true,
+        [FromQuery] bool includeLinkVerification = true,
         CancellationToken cancellationToken = default)
     {
         var options = new DebugReportOptions
@@ -848,7 +855,7 @@ public class PolyglotController : ControllerBase
             IncludeLibraryNames = includeLibraryNames,
             IncludeUserNames = includeUserNames,
             IncludeFilesystemDiagnostics = includeFilesystemDiagnostics,
-            IncludeHardlinkVerification = includeHardlinkVerification
+            IncludeLinkVerification = includeLinkVerification
         };
 
         if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
@@ -1105,6 +1112,11 @@ public class UISettingsResponse
     public bool SyncMirrorsAfterLibraryScan { get; set; }
 
     /// <summary>
+    /// Gets or sets how mirrored files are linked back to their source (hardlink or symlink).
+    /// </summary>
+    public LinkMode LinkMode { get; set; }
+
+    /// <summary>
     /// Gets or sets the excluded file extensions.
     /// </summary>
     public List<string> ExcludedExtensions { get; set; } = new();
@@ -1170,6 +1182,11 @@ public class UISettingsUpdateRequest
     /// Gets or sets whether mirrors sync after library scans.
     /// </summary>
     public bool? SyncMirrorsAfterLibraryScan { get; set; }
+
+    /// <summary>
+    /// Gets or sets how mirrored files are linked back to their source (hardlink or symlink).
+    /// </summary>
+    public LinkMode? LinkMode { get; set; }
 
     /// <summary>
     /// Gets or sets the excluded file extensions (replaces existing list).

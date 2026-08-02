@@ -6,14 +6,14 @@ using System.Linq;
 namespace Jellyfin.Plugin.Polyglot.Helpers;
 
 /// <summary>
-/// Classifies files to determine if they should be hardlinked or excluded from mirroring.
-/// Uses an exclusion-based approach: hardlink everything except metadata files.
+/// Classifies files to determine if they should be included in the mirror or excluded from mirroring.
+/// Uses an exclusion-based approach: include everything except metadata files.
 /// Included directories override extension exclusions for language-independent content.
 /// </summary>
 public static class FileClassifier
 {
     /// <summary>
-    /// Default file extensions to exclude from hardlinking (metadata and images).
+    /// Default file extensions to exclude from mirroring (metadata and images).
     /// </summary>
     public static readonly HashSet<string> DefaultExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -38,7 +38,7 @@ public static class FileClassifier
     };
 
     /// <summary>
-    /// Default directory names where all files should be hardlinked regardless of extension.
+    /// Default directory names where all files should be included in the mirror regardless of extension.
     /// These contain language-independent content like trickplay images and actor photos.
     /// </summary>
     public static readonly HashSet<string> DefaultIncludedDirectories = new(StringComparer.OrdinalIgnoreCase)
@@ -48,37 +48,37 @@ public static class FileClassifier
     };
 
     /// <summary>
-    /// Determines whether a file should be hardlinked (included in the mirror).
+    /// Determines whether a file should be included in the mirror.
     /// Uses the default excluded/included extensions and directories.
     /// </summary>
     /// <param name="filePath">The full path to the file.</param>
-    /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
-    public static bool ShouldHardlink(string filePath)
+    /// <returns>True if the file should be included in the mirror; false if it should be excluded.</returns>
+    public static bool ShouldMirror(string filePath)
     {
-        return ShouldHardlink(filePath, null, null, null);
+        return ShouldMirror(filePath, null, null, null);
     }
 
     /// <summary>
-    /// Determines whether a file should be hardlinked (included in the mirror).
+    /// Determines whether a file should be included in the mirror.
     /// </summary>
     /// <param name="filePath">The full path to the file.</param>
     /// <param name="excludedExtensions">Custom list of extensions to exclude. If null, uses defaults.</param>
     /// <param name="excludedDirectories">Custom list of directories to exclude. If null, uses defaults.</param>
-    /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
-    public static bool ShouldHardlink(string filePath, IEnumerable<string>? excludedExtensions, IEnumerable<string>? excludedDirectories)
+    /// <returns>True if the file should be included in the mirror; false if it should be excluded.</returns>
+    public static bool ShouldMirror(string filePath, IEnumerable<string>? excludedExtensions, IEnumerable<string>? excludedDirectories)
     {
-        return ShouldHardlink(filePath, excludedExtensions, excludedDirectories, null);
+        return ShouldMirror(filePath, excludedExtensions, excludedDirectories, null);
     }
 
     /// <summary>
-    /// Determines whether a file should be hardlinked (included in the mirror).
+    /// Determines whether a file should be included in the mirror.
     /// </summary>
     /// <param name="filePath">The full path to the file.</param>
     /// <param name="excludedExtensions">Custom list of extensions to exclude. If null, uses defaults.</param>
     /// <param name="excludedDirectories">Custom list of directories to exclude. If null, uses defaults.</param>
     /// <param name="includedDirectories">Custom list of directories where all files are included regardless of extension. If null, uses defaults.</param>
-    /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
-    public static bool ShouldHardlink(string filePath, IEnumerable<string>? excludedExtensions, IEnumerable<string>? excludedDirectories, IEnumerable<string>? includedDirectories)
+    /// <returns>True if the file should be included in the mirror; false if it should be excluded.</returns>
+    public static bool ShouldMirror(string filePath, IEnumerable<string>? excludedExtensions, IEnumerable<string>? excludedDirectories, IEnumerable<string>? includedDirectories)
     {
         if (string.IsNullOrEmpty(filePath))
         {
@@ -120,7 +120,7 @@ public static class FileClassifier
             return false;
         }
 
-        // All other files (video, audio, subtitles, etc.) should be hardlinked
+        // All other files (video, audio, subtitles, etc.) should be included in the mirror
         return true;
     }
 
@@ -157,7 +157,7 @@ public static class FileClassifier
     }
 
     /// <summary>
-    /// Determines whether a directory is an "included" directory where all files should be hardlinked.
+    /// Determines whether a directory is an "included" directory where all files should be included in the mirror.
     /// Uses the default included directories.
     /// </summary>
     /// <param name="directoryPath">The full path to the directory.</param>
@@ -168,7 +168,7 @@ public static class FileClassifier
     }
 
     /// <summary>
-    /// Determines whether a directory is an "included" directory where all files should be hardlinked.
+    /// Determines whether a directory is an "included" directory where all files should be included in the mirror.
     /// Supports both exact matches and suffix matches (e.g., ".trickplay" matches "movie.trickplay").
     /// </summary>
     /// <param name="directoryPath">The full path to the directory.</param>

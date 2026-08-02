@@ -48,6 +48,15 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool SyncMirrorsAfterLibraryScan { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets how mirrored files are linked back to their source.
+    /// Hardlinks require source and target to be on the same filesystem, but have zero overhead.
+    /// Symlinks can cross filesystem/mount boundaries, but must themselves be stored on a
+    /// filesystem that supports symlinks (notably, exFAT/FAT32 do not on Linux).
+    /// Default is Hardlink to maintain backward compatibility.
+    /// </summary>
+    public LinkMode LinkMode { get; set; } = LinkMode.Hardlink;
+
+    /// <summary>
     /// Gets or sets the list of configured language alternatives.
     /// </summary>
     public List<LanguageAlternative> LanguageAlternatives { get; set; }

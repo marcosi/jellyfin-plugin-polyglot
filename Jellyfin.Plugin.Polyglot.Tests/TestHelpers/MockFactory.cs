@@ -161,6 +161,7 @@ public static class MockFactory
         dest.AutoManageNewUsers = source.AutoManageNewUsers;
         dest.DefaultLanguageAlternativeId = source.DefaultLanguageAlternativeId;
         dest.SyncMirrorsAfterLibraryScan = source.SyncMirrorsAfterLibraryScan;
+        dest.LinkMode = source.LinkMode;
         dest.ExcludedExtensions = source.ExcludedExtensions;
         dest.ExcludedDirectories = source.ExcludedDirectories;
         dest.LanguageAlternatives = source.LanguageAlternatives;

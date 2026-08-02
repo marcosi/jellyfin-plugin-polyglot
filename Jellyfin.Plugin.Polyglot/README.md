@@ -6,7 +6,7 @@ For user documentation, see the [root README](../README.md).
 
 ## Architecture Overview
 
-Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem hardlinks. Each mirror fetches metadata in a different language, while the actual media files remain in place.
+Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem hardlinks or symlinks (configurable via Link Mode). Each mirror fetches metadata in a different language, while the actual media files remain in place.
 
 ### System Diagram
 
@@ -68,8 +68,8 @@ Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem h
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌────────────────────────────┐     │ │
 │  │  │ FileClassifier   │  │ FileSystemHelper │  │ DebugReportService         │     │ │
 │  │  │                  │  │                  │  │                            │     │ │
-│  │  │ What to hardlink │  │ P/Invoke for     │  │ Log buffer + diagnostics   │     │ │
-│  │  │ vs skip          │  │ hardlinks        │  │                            │     │ │
+│  │  │ What to include  │  │ Hardlink (P/Inv) │  │ Log buffer + diagnostics   │     │ │
+│  │  │ in mirror vs skip│  │ + symlink links  │  │                            │     │ │
 │  │  └──────────────────┘  └──────────────────┘  └────────────────────────────┘     │ │
 │  │                                                                                 │ │
 │  └─────────────────────────────────────────────────────────────────────────────────┘ │
@@ -87,10 +87,11 @@ Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem h
 └───────────┼───────────────────┼───────────────────┼───────────────────┼──────────────┘
             │                   │                   │                   │
             │    ┌──────────────┴───────────────────┴──────────────┐    │
-            │    │                  HARDLINKS                      │    │
+            │    │            HARDLINKS or SYMLINKS                │    │
             └────►                                                 ◄────┘
-                 │   Mirror files point to same inodes as source   │
-                 │                                                 │
+                 │  Hardlink mode: same inode as source (same FS)  │
+                 │  Symlink mode: link file elsewhere pointing at  │
+                 │  the source path (can cross filesystems)        │
                  └──────────────────────┬──────────────────────────┘
                                         │
                                         ▼
@@ -101,14 +102,14 @@ Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem h
 │    ├── movies/                          ← Source library path                          │
 │    │   └── Inception (2010)/                                                           │
 │    │       ├── Inception.mkv            ← Actual file (inode 12345)                    │
-│    │       ├── Inception.nfo            ← English metadata (NOT hardlinked)            │
-│    │       └── poster.jpg               ← English artwork (NOT hardlinked)             │
+│    │       ├── Inception.nfo            ← English metadata (NOT mirrored)              │
+│    │       └── poster.jpg               ← English artwork (NOT mirrored)               │
 │    │                                                                                   │
 │    └── polyglot/                                                                       │
 │        └── spanish/                     ← Language alternative destination             │
 │            └── movies/                  ← Mirror library path                          │
 │                └── Inception (2010)/                                                   │
-│                    ├── Inception.mkv    ← Hardlink to same inode 12345                 │
+│                    ├── Inception.mkv    ← Hardlink (same inode) or symlink to source    │
 │                    ├── Inception.nfo    ← Spanish metadata                             │
 │                    └── poster.png       ← Spanish artwork                              │
 │                                           (Spanish metadata fetched by Jellyfin)       │
@@ -199,21 +200,25 @@ User assigned to "Spanish" language
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │                    Operating System                           │  │
 │  │                                                               │  │
+│  │  Hardlink mode (P/Invoke):        Symlink mode (BCL):         │  │
 │  │  ┌────────────────────────┐  ┌────────────────────────┐       │  │
-│  │  │ Windows: kernel32.dll  │  │ Unix: libc             │       │  │
-│  │  │   CreateHardLink()     │  │   link()               │       │  │
+│  │  │ Windows: kernel32.dll  │  │ File.CreateSymbolicLink│       │  │
+│  │  │   CreateHardLink()     │  │ (.NET 6+, no P/Invoke) │       │  │
+│  │  │ Unix: libc link()      │  │                        │       │  │
 │  │  └────────────────────────┘  └────────────────────────┘       │  │
 │  │                                                               │  │
-│  │  Filesystem must support hardlinks (ext4, NTFS, APFS,         │  │
-│  │  XFS, btrfs, ZFS)                                             │  │
+│  │  Hardlink filesystem support: ext4, NTFS, APFS, XFS,          │  │
+│  │  btrfs, ZFS. Symlinks work on most modern filesystems,        │  │
+│  │  except exFAT/FAT32 on Linux (neither mode works there).      │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                   │                                 │
 │                                   ▼                                 │
 │             ┌──────────────────────────────────────────┐            │
 │             │          FileSystemHelper                │            │
 │             │                                          │            │
-│             │ P/Invoke calls for native hardlink       │            │
-│             │ creation on Windows and Unix             │            │
+│             │ CreateLink() dispatches to CreateHardLink │            │
+│             │ (P/Invoke) or CreateSymLink (BCL) based   │            │
+│             │ on the configured Link Mode               │            │
 │             └──────────────────────────────────────────┘            │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -233,19 +238,20 @@ Jellyfin.Plugin.Polyglot/
 │   ├── UserCreatedConsumer.cs       # Auto-assign language on new user
 │   └── UserDeletedConsumer.cs       # Cleanup user config on deletion
 ├── Helpers/
-│   ├── FileClassifier.cs            # Decides what to hardlink vs skip
-│   ├── FileSystemHelper.cs          # Cross-platform hardlink creation (P/Invoke)
+│   ├── FileClassifier.cs            # Decides what to include in the mirror vs skip
+│   ├── FileSystemHelper.cs          # Cross-platform hardlink (P/Invoke) + symlink (BCL) creation
 │   └── PolyglotLogger.cs            # Logger extensions + debug buffer capture
 ├── Models/
 │   ├── LanguageAlternative.cs       # Language config (name, path, mirrors)
 │   ├── LibraryMirror.cs             # Source → target mapping with sync status
+│   ├── LinkMode.cs                  # Enum: Hardlink, Symlink
 │   ├── UserLanguageConfig.cs        # Per-user language assignment
 │   ├── UserInfo.cs                  # API response model
 │   ├── LibraryInfo.cs               # API response model
 │   └── SyncStatus.cs                # Enum: Pending, Syncing, Synced, Error
 ├── Services/
 │   ├── IMirrorService.cs            # Interface
-│   ├── MirrorService.cs             # Hardlink creation, sync, cleanup
+│   ├── MirrorService.cs             # Link creation (hardlink/symlink), sync, cleanup
 │   ├── IUserLanguageService.cs      # Interface
 │   ├── UserLanguageService.cs       # Language assignment management
 │   ├── ILibraryAccessService.cs     # Interface
@@ -264,7 +270,7 @@ Jellyfin.Plugin.Polyglot/
 
 ### MirrorService
 
-Handles all hardlink operations with per-mirror locking:
+Handles all link operations (hardlink or symlink, per the configured Link Mode) with per-mirror locking:
 
 ```csharp
 // Key operations
@@ -278,7 +284,7 @@ Task<OrphanCleanupResult> CleanupOrphanedMirrorsAsync(ct)
 
 1. Build file sets with signatures (size + mtime) for source and target
 2. Detect additions (new in source), deletions (missing from source), modifications (signature mismatch)
-3. Delete removed files, recreate modified hardlinks, add new hardlinks
+3. Delete removed files, recreate modified links, add new links
 4. Clean up empty directories
 
 ### LibraryAccessService
@@ -304,14 +310,14 @@ Task<bool> ReconcileUserAccessAsync(userId, ct)
 Generates troubleshooting reports with optional anonymization:
 
 -   Captures recent logs in a circular buffer (500 entries, 1 hour)
--   Verifies hardlinks by checking link count
+-   Verifies links (hardlink: checks link count; symlink: checks `LinkTarget` resolves to the expected source)
 -   Reports filesystem info, disk space, and mirror health
 
 ## File Classification
 
-`FileClassifier` determines what gets hardlinked:
+`FileClassifier` determines what gets included in the mirror:
 
-| Hardlinked                             | Skipped                                                                |
+| Mirrored                               | Skipped                                                                |
 | -------------------------------------- | ---------------------------------------------------------------------- |
 | `.mkv`, `.mp4`, `.avi`, `.ts`, `.m2ts` | `.nfo`                                                                 |
 | `.mp3`, `.flac`, `.m4a`, `.ogg`        | `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.tbn`, `.bmp`               |
@@ -352,9 +358,11 @@ All endpoints require admin privileges (`[Authorize(Policy = "RequiresElevation"
 | `MirrorPostScanTask`   | After library scans | Keep mirrors in sync with source changes  |
 | `UserLanguageSyncTask` | Daily at 3:00 AM    | Reconcile user library access permissions |
 
-## Cross-Platform Hardlinks
+## Cross-Platform Linking
 
-`FileSystemHelper` uses P/Invoke for native hardlink operations:
+`FileSystemHelper.CreateLink(source, link, mode, logger)` dispatches to one of two implementations based on `LinkMode`:
+
+**Hardlink** (`CreateHardLink`) uses P/Invoke for native hardlink operations, since the .NET BCL has no hardlink-creation API:
 
 ```csharp
 // Windows
@@ -366,7 +374,15 @@ static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, 
 static extern int link(string oldpath, string newpath);
 ```
 
-Same-filesystem detection is done by attempting a test hardlink (most reliable cross-platform method).
+Same-filesystem detection (`AreOnSameFilesystem`, only used in Hardlink mode) is done by attempting a test hardlink (most reliable cross-platform method).
+
+**Symlink** (`CreateSymLink`) uses the .NET 6+ BCL API directly - no P/Invoke needed:
+
+```csharp
+File.CreateSymbolicLink(linkPath, sourcePath);
+```
+
+Symlinks can cross filesystem/mount boundaries, so `AreOnSameFilesystem` is skipped entirely in Symlink mode. The only requirement is that the filesystem the symlink *itself* is stored on supports symlinks - notably, exFAT and FAT32 do not on Linux (same limitation as hardlinks there), so a mirror destination on such a drive won't work in either mode. Link validity is checked via `FileInfo.LinkTarget`/`File.ResolveLinkTarget` rather than shelling out to `stat`/`fsutil` (which is still used for hardlink verification's link-count check).
 
 ## Building
 

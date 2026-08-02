@@ -153,14 +153,19 @@ public class MirrorService : IMirrorService
                 throw new InvalidOperationException($"Source library {currentMirror.SourceLibraryName} has no paths");
             }
 
-            // Validate filesystem compatibility
-            foreach (var sourcePath in sourcePaths)
+            var linkMode = _configService.Read(c => c.LinkMode);
+
+            // Validate filesystem compatibility (only required for hardlinks; symlinks can cross filesystems)
+            if (linkMode == LinkMode.Hardlink)
             {
-                if (!FileSystemHelper.AreOnSameFilesystem(sourcePath, currentMirror.TargetPath))
+                foreach (var sourcePath in sourcePaths)
                 {
-                    throw new InvalidOperationException(
-                        $"Source path {sourcePath} and target path {currentMirror.TargetPath} are on different filesystems. " +
-                        "Hardlinks require both paths to be on the same filesystem.");
+                    if (!FileSystemHelper.AreOnSameFilesystem(sourcePath, currentMirror.TargetPath))
+                    {
+                        throw new InvalidOperationException(
+                            $"Source path {sourcePath} and target path {currentMirror.TargetPath} are on different filesystems. " +
+                            "Hardlinks require both paths to be on the same filesystem. Switch Link Mode to Symlink to mirror across filesystems.");
+                    }
                 }
             }
 
@@ -192,7 +197,7 @@ public class MirrorService : IMirrorService
             int fileCount = 0;
             foreach (var sourcePath in sourcePaths)
             {
-                fileCount += await MirrorDirectoryAsync(sourcePath, currentMirror.TargetPath, cancellationToken).ConfigureAwait(false);
+                fileCount += await MirrorDirectoryAsync(sourcePath, currentMirror.TargetPath, linkMode, cancellationToken).ConfigureAwait(false);
             }
 
             _logger.PolyglotDebug("CreateMirrorAsync: Mirrored {0} files", fileCount);
@@ -420,6 +425,8 @@ public class MirrorService : IMirrorService
                 throw new InvalidOperationException($"Source library {mirror.SourceLibraryName} has no paths");
             }
 
+            var linkMode = _configService.Read(c => c.LinkMode);
+
             if (!Directory.Exists(mirror.TargetPath))
             {
                 Directory.CreateDirectory(mirror.TargetPath);
@@ -538,14 +545,14 @@ public class MirrorService : IMirrorService
                     var targetFile = Path.Combine(mirror.TargetPath, relativePath);
                     try
                     {
-                        FileSystemHelper.CreateHardLink(sourceFile, targetFile, _logger);
-                        _logger.PolyglotDebug("SyncMirrorAsync: Created hardlink for {0}",
-                            new LogPathEntity(relativePath, "file"));
+                        FileSystemHelper.CreateLink(sourceFile, targetFile, linkMode, _logger);
+                        _logger.PolyglotDebug("SyncMirrorAsync: Created {0} link for {1}",
+                            linkMode, new LogPathEntity(relativePath, "file"));
                     }
                     catch (Exception ex)
                     {
-                        _logger.PolyglotWarning(ex, "SyncMirrorAsync: Failed to create hardlink for {0}",
-                            new LogPathEntity(relativePath, "file"));
+                        _logger.PolyglotWarning(ex, "SyncMirrorAsync: Failed to create {0} link for {1}",
+                            linkMode, new LogPathEntity(relativePath, "file"));
                     }
                 }
 
@@ -852,11 +859,15 @@ public class MirrorService : IMirrorService
             return (false, "Target path cannot contain path traversal sequences");
         }
 
-        foreach (var sourcePath in sourcePaths)
+        var linkMode = _configService.Read(c => c.LinkMode);
+        if (linkMode == LinkMode.Hardlink)
         {
-            if (!FileSystemHelper.AreOnSameFilesystem(sourcePath, targetPath))
+            foreach (var sourcePath in sourcePaths)
             {
-                return (false, $"Source path '{sourcePath}' and target path are on different filesystems. Hardlinks require the same filesystem.");
+                if (!FileSystemHelper.AreOnSameFilesystem(sourcePath, targetPath))
+                {
+                    return (false, $"Source path '{sourcePath}' and target path are on different filesystems. Hardlinks require the same filesystem. Switch Link Mode to Symlink to mirror across filesystems.");
+                }
             }
         }
 
@@ -1068,9 +1079,9 @@ public class MirrorService : IMirrorService
     }
 
     /// <summary>
-    /// Mirrors a directory structure with hardlinks.
+    /// Mirrors a directory structure using the configured link mode.
     /// </summary>
-    private async Task<int> MirrorDirectoryAsync(string sourcePath, string targetPath, CancellationToken cancellationToken)
+    private async Task<int> MirrorDirectoryAsync(string sourcePath, string targetPath, LinkMode linkMode, CancellationToken cancellationToken)
     {
         int fileCount = 0;
 
@@ -1081,7 +1092,7 @@ public class MirrorService : IMirrorService
             var relativePath = Path.GetRelativePath(sourcePath, sourceFile);
             var targetFile = Path.Combine(targetPath, relativePath);
 
-            if (FileSystemHelper.CreateHardLink(sourceFile, targetFile, _logger))
+            if (FileSystemHelper.CreateLink(sourceFile, targetFile, linkMode, _logger))
             {
                 fileCount++;
             }
@@ -1133,7 +1144,7 @@ public class MirrorService : IMirrorService
                 }
             }
 
-            if (!isInExcludedDir && FileClassifier.ShouldHardlink(fileInfo.FullName, excludedExtensions, excludedDirectoryNames, includedDirectoryNames))
+            if (!isInExcludedDir && FileClassifier.ShouldMirror(fileInfo.FullName, excludedExtensions, excludedDirectoryNames, includedDirectoryNames))
             {
                 yield return (fileInfo.FullName, new FileSignature(fileInfo.Length, fileInfo.LastWriteTimeUtc.Ticks));
             }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
 using PluginConfig = Jellyfin.Plugin.Polyglot.Configuration.PluginConfiguration;
 using Jellyfin.Plugin.Polyglot.Services;
@@ -114,6 +115,56 @@ public class MirrorServiceValidationTests
     }
 
     #endregion
+
+    #region ValidateMirrorConfiguration - Link mode
+
+    [Fact]
+    public void ValidateMirrorConfiguration_SymlinkMode_SkipsSameFilesystemCheck()
+    {
+        // Skip on Windows: "/dev" doesn't exist there, and this test relies on it being a
+        // distinct filesystem from the OS temp directory (devtmpfs/devfs vs. the main disk).
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+            System.Runtime.InteropServices.OSPlatform.Windows))
+        {
+            return;
+        }
+
+        // Arrange
+        var sourceId = Guid.NewGuid();
+        var targetPath = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
+
+        // Sanity check: confirm Hardlink mode really would reject this source/target pairing,
+        // so the assertion below actually proves Symlink mode skips the check.
+        FileSystemHelper.AreOnSameFilesystem("/dev", targetPath).Should().BeFalse(
+            "test assumes /dev is a distinct filesystem from the OS temp directory");
+
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
+        {
+            new() { ItemId = sourceId.ToString(), Name = "Movies", Locations = new[] { "/dev" } }
+        });
+
+        var config = new PluginConfig
+        {
+            LinkMode = LinkMode.Symlink,
+            LanguageAlternatives = new List<LanguageAlternative>()
+        };
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(config);
+        var service = new MirrorService(
+            _libraryManagerMock.Object,
+            _providerManagerMock.Object,
+            _fileSystemMock.Object,
+            configServiceMock.Object,
+            new Mock<ILogger<MirrorService>>().Object);
+
+        // Act
+        var (isValid, errorMessage) = service.ValidateMirrorConfiguration(sourceId, targetPath);
+
+        // Assert
+        isValid.Should().BeTrue("Symlink mode should not require source and target to be on the same filesystem");
+        errorMessage.Should().BeNull();
+    }
+
+    #endregion
 }
 
 /// <summary>
@@ -178,13 +229,14 @@ public class MirrorServiceFileOperationTests : IDisposable
         dest.AutoManageNewUsers = source.AutoManageNewUsers;
         dest.DefaultLanguageAlternativeId = source.DefaultLanguageAlternativeId;
         dest.SyncMirrorsAfterLibraryScan = source.SyncMirrorsAfterLibraryScan;
+        dest.LinkMode = source.LinkMode;
         dest.ExcludedExtensions = source.ExcludedExtensions;
         dest.ExcludedDirectories = source.ExcludedDirectories;
         dest.LanguageAlternatives = source.LanguageAlternatives;
         dest.UserLanguages = source.UserLanguages;
     }
 
-    private void SetupMirrorConfig(LibraryMirror mirror, LanguageAlternative? alternative = null)
+    private void SetupMirrorConfig(LibraryMirror mirror, LanguageAlternative? alternative = null, LinkMode linkMode = LinkMode.Hardlink)
     {
         // Create an alternative if not provided
         alternative ??= new LanguageAlternative
@@ -203,6 +255,7 @@ public class MirrorServiceFileOperationTests : IDisposable
 
         var config = new PluginConfig
         {
+            LinkMode = linkMode,
             LanguageAlternatives = new List<LanguageAlternative> { alternative }
         };
 
@@ -285,6 +338,45 @@ public class MirrorServiceFileOperationTests : IDisposable
             c.LanguageAlternatives.SelectMany(a => a.MirroredLibraries).FirstOrDefault(m => m.Id == mirror.Id));
         updatedMirror.Should().NotBeNull();
         updatedMirror!.Status.Should().Be(SyncStatus.Synced);
+    }
+
+    [Fact]
+    public async Task SyncMirrorAsync_SymlinkMode_NewVideoFile_CreatesSymlink()
+    {
+        // Arrange
+        var sourceDir = Path.Combine(_tempDir, "source");
+        var targetDir = Path.Combine(_tempDir, "target");
+        Directory.CreateDirectory(sourceDir);
+        Directory.CreateDirectory(targetDir);
+
+        var sourceFile = Path.Combine(sourceDir, "movie.mkv");
+        File.WriteAllText(sourceFile, "video content");
+
+        var sourceId = Guid.NewGuid();
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
+        {
+            new() { ItemId = sourceId.ToString(), Name = "Movies", Locations = new[] { sourceDir } }
+        });
+
+        var mirror = new LibraryMirror
+        {
+            Id = Guid.NewGuid(),
+            SourceLibraryId = sourceId,
+            SourceLibraryName = "Movies",
+            TargetPath = targetDir,
+            Status = SyncStatus.Pending
+        };
+        SetupMirrorConfig(mirror, linkMode: LinkMode.Symlink);
+
+        // Act
+        await _service.SyncMirrorAsync(mirror.Id);
+
+        // Assert
+        var targetFile = Path.Combine(targetDir, "movie.mkv");
+        File.Exists(targetFile).Should().BeTrue("video file should be mirrored");
+        var linkTarget = new FileInfo(targetFile).LinkTarget;
+        linkTarget.Should().NotBeNull("mirror should create a real symlink in Symlink mode");
+        File.ResolveLinkTarget(targetFile, returnFinalTarget: true)!.FullName.Should().Be(Path.GetFullPath(sourceFile));
     }
 
     [Fact]
