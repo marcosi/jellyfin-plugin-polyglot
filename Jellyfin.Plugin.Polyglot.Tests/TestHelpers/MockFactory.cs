@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
-using Jellyfin.Data.Entities;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Polyglot.Configuration;
 using Jellyfin.Plugin.Polyglot.Models;
@@ -54,7 +54,7 @@ public static class MockFactory
 
         users ??= new List<User>();
 
-        mock.Setup(m => m.Users).Returns(users.AsQueryable());
+        mock.Setup(m => m.GetUsers()).Returns(users);
 
         foreach (var user in users)
         {

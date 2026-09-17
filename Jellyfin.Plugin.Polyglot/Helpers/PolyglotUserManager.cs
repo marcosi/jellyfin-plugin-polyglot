@@ -19,6 +19,7 @@ public sealed class PolyglotUserManager
 
     // Cached reflection info
     private static MethodInfo? _getUserByIdMethod;
+    private static MethodInfo? _getUsersMethod;
     private static PropertyInfo? _usersProperty;
     private static MethodInfo? _updateUserAsyncMethod;
 
@@ -67,6 +68,25 @@ public sealed class PolyglotUserManager
     /// <returns>An enumerable of PolyglotUser instances.</returns>
     public IEnumerable<PolyglotUser> GetUsers()
     {
+        // 12.0+ exposes GetUsers() as a method; 10.x exposed it as a "Users" property.
+        // Try the method first since that's the current shape, then fall back for older servers.
+        var method = GetCachedMethod(ref _getUsersMethod, "GetUsers");
+        if (method != null)
+        {
+            try
+            {
+                var result = method.Invoke(_userManager, Array.Empty<object>());
+                if (result is System.Collections.IEnumerable methodEnumerable)
+                {
+                    return methodEnumerable.Cast<object>().Select(u => new PolyglotUser(u)).ToList();
+                }
+            }
+            catch
+            {
+                // Fall through to property lookup
+            }
+        }
+
         var property = GetCachedProperty(ref _usersProperty, "Users");
         if (property == null)
         {
